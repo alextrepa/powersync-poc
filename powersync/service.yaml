@@ -1,0 +1,31 @@
+telemetry:
+  disable_telemetry_sharing: true
+
+replication:
+  connections:
+    - type: mssql
+      uri: !env PS_DATA_SOURCE_URI
+      schema: dbo
+      additionalConfig:
+        trustServerCertificate: true
+        pollingIntervalMs: 1000
+        pollingBatchSize: 20
+
+storage:
+  type: postgresql
+  uri: !env PS_STORAGE_URI
+  sslmode: disable
+
+port: 8080
+
+sync_config:
+  path: sync-config.yaml
+
+client_auth:
+  audience: [powersync]
+  jwks:
+    keys:
+      - kty: oct
+        alg: HS256
+        kid: local-dev
+        k: !env PS_CLIENT_AUTH_KEY

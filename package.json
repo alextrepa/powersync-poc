@@ -1,0 +1,33 @@
+{
+  "name": "powersync-field-operations-poc",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12.0 <23"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm run test",
+    "lint": "eslint .",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "e2e": "playwright test",
+    "format": "prettier --write \"apps/**/*.{ts,tsx,css}\" \"packages/**/*.ts\" \"tests/e2e/**/*.ts\" \"*.{json,ts}\"",
+    "format:check": "prettier --check \"apps/**/*.{ts,tsx,css}\" \"packages/**/*.ts\" \"tests/e2e/**/*.ts\" \"*.{json,ts}\""
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.2",
+    "@playwright/test": "1.62.1",
+    "@types/node": "24.10.13",
+    "eslint": "9.39.2",
+    "prettier": "^3.9.6",
+    "typescript": "5.9.3",
+    "typescript-eslint": "8.68.0",
+    "vitest": "4.1.11"
+  }
+}

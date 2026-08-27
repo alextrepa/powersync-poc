@@ -1,0 +1,25 @@
+name: plant-route-poc-azure
+
+services:
+  sqlserver:
+    profiles: [local-only]
+
+  sqlserver-setup:
+    profiles: [local-only]
+
+  api:
+    depends_on: !reset {}
+    environment:
+      SQL_SERVER: ${AZURE_SQL_SERVER:?set AZURE_SQL_SERVER}
+      SQL_DATABASE: ${AZURE_SQL_DATABASE:?set AZURE_SQL_DATABASE}
+      SQL_USER: ${AZURE_SQL_APP_USER:-plant_app}
+      SQL_PASSWORD: ${AZURE_SQL_APP_PASSWORD:?set AZURE_SQL_APP_PASSWORD}
+      SQL_ENCRYPT: "true"
+      SQL_TRUST_SERVER_CERTIFICATE: "false"
+
+  powersync:
+    depends_on: !reset
+      powersync-storage:
+        condition: service_healthy
+    environment:
+      PS_DATA_SOURCE_URI: ${AZURE_POWERSYNC_SOURCE_URI:?set AZURE_POWERSYNC_SOURCE_URI}

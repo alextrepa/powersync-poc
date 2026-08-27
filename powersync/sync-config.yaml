@@ -1,0 +1,25 @@
+config:
+  edition: 3
+
+streams:
+  gate_zero:
+    auto_subscribe: true
+    queries:
+      - SELECT * FROM sync_probes
+
+  team_day:
+    queries:
+      - SELECT * FROM daily_plans WHERE id = subscription.parameter('plan_id')
+      - SELECT trucks.* FROM trucks JOIN daily_plans ON daily_plans.id = trucks.daily_plan_id WHERE daily_plans.id = subscription.parameter('plan_id')
+      - SELECT team_assignments.* FROM team_assignments JOIN allocations ON allocations.id = team_assignments.allocation_id JOIN trucks ON trucks.id = allocations.truck_id WHERE trucks.daily_plan_id = subscription.parameter('plan_id') AND team_assignments.team_number = subscription.parameter('team_number')
+      - SELECT allocations.* FROM allocations JOIN lots ON lots.id = allocations.lot_id WHERE allocations.status = 'active' AND lots.product_id IN (SELECT candidate_lots.product_id FROM lots candidate_lots WHERE candidate_lots.id IN (SELECT planned_allocations.lot_id FROM allocations planned_allocations JOIN trucks planned_trucks ON planned_trucks.id = planned_allocations.truck_id JOIN team_assignments planned_assignments ON planned_assignments.allocation_id = planned_allocations.id WHERE planned_trucks.daily_plan_id = subscription.parameter('plan_id') AND planned_assignments.team_number = subscription.parameter('team_number')))
+      - SELECT products.* FROM products WHERE id IN (SELECT lots.product_id FROM lots WHERE lots.id IN (SELECT allocations.lot_id FROM allocations JOIN trucks ON trucks.id = allocations.truck_id JOIN team_assignments ON team_assignments.allocation_id = allocations.id WHERE trucks.daily_plan_id = subscription.parameter('plan_id') AND team_assignments.team_number = subscription.parameter('team_number')))
+      - SELECT lots.* FROM lots WHERE product_id IN (SELECT lots.product_id FROM lots WHERE lots.id IN (SELECT allocations.lot_id FROM allocations JOIN trucks ON trucks.id = allocations.truck_id JOIN team_assignments ON team_assignments.allocation_id = allocations.id WHERE trucks.daily_plan_id = subscription.parameter('plan_id') AND team_assignments.team_number = subscription.parameter('team_number')))
+      - SELECT lot_flags.* FROM lot_flags JOIN lots ON lots.id = lot_flags.lot_id WHERE lots.product_id IN (SELECT lots.product_id FROM lots WHERE lots.id IN (SELECT allocations.lot_id FROM allocations JOIN trucks ON trucks.id = allocations.truck_id JOIN team_assignments ON team_assignments.allocation_id = allocations.id WHERE trucks.daily_plan_id = subscription.parameter('plan_id') AND team_assignments.team_number = subscription.parameter('team_number')))
+      - SELECT alternative_claims.* FROM alternative_claims JOIN lots ON lots.id = alternative_claims.lot_id WHERE lots.product_id IN (SELECT lots.product_id FROM lots WHERE lots.id IN (SELECT allocations.lot_id FROM allocations JOIN trucks ON trucks.id = allocations.truck_id JOIN team_assignments ON team_assignments.allocation_id = allocations.id WHERE trucks.daily_plan_id = subscription.parameter('plan_id') AND team_assignments.team_number = subscription.parameter('team_number')))
+      - SELECT pickups.* FROM pickups JOIN team_assignments ON team_assignments.id = pickups.assignment_id JOIN allocations ON allocations.id = team_assignments.allocation_id JOIN trucks ON trucks.id = allocations.truck_id WHERE trucks.daily_plan_id = subscription.parameter('plan_id') AND pickups.team_number = subscription.parameter('team_number')
+      - SELECT shortage_reports.* FROM shortage_reports JOIN team_assignments ON team_assignments.id = shortage_reports.assignment_id JOIN allocations ON allocations.id = team_assignments.allocation_id JOIN trucks ON trucks.id = allocations.truck_id WHERE trucks.daily_plan_id = subscription.parameter('plan_id') AND team_assignments.team_number = subscription.parameter('team_number')
+      - SELECT truck_completions.* FROM truck_completions JOIN trucks ON trucks.id = truck_completions.truck_id WHERE trucks.daily_plan_id = subscription.parameter('plan_id') AND truck_completions.team_number = subscription.parameter('team_number')
+      - SELECT exceptions.* FROM exceptions JOIN exception_participants ON exception_participants.exception_id = exceptions.id WHERE exception_participants.plan_id = subscription.parameter('plan_id') AND exception_participants.team_number = subscription.parameter('team_number')
+      - SELECT exception_participants.* FROM exception_participants WHERE plan_id = subscription.parameter('plan_id') AND team_number = subscription.parameter('team_number')
+      - SELECT corrections.* FROM corrections JOIN exception_participants ON exception_participants.exception_id = corrections.exception_id WHERE exception_participants.plan_id = subscription.parameter('plan_id') AND exception_participants.team_number = subscription.parameter('team_number')

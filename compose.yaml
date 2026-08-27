@@ -1,0 +1,174 @@
+name: plant-route-poc
+
+services:
+  sqlserver:
+    platform: linux/amd64
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: Y
+      MSSQL_PID: Developer
+      MSSQL_AGENT_ENABLED: "true"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env}
+    ports:
+      - "1433:1433"
+    volumes:
+      - sqlserver-data:/var/opt/mssql
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -Q \"SELECT 1\" || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 20s
+
+  sqlserver-setup:
+    platform: linux/amd64
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    depends_on:
+      sqlserver:
+        condition: service_healthy
+    environment:
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD:?set MSSQL_SA_PASSWORD in .env}
+      MSSQL_APP_PASSWORD: ${MSSQL_APP_PASSWORD:?set MSSQL_APP_PASSWORD in .env}
+    volumes:
+      - ./infra/sqlserver/init.sql:/scripts/init.sql:ro
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - /opt/mssql-tools18/bin/sqlcmd -C -b -S sqlserver,1433 -U sa -P "$${MSSQL_SA_PASSWORD}" -v AppPassword="$${MSSQL_APP_PASSWORD}" -i /scripts/init.sql
+    restart: "no"
+
+  powersync-storage:
+    image: postgres:17.7-alpine
+    environment:
+      POSTGRES_DB: powersync
+      POSTGRES_USER: powersync
+      POSTGRES_PASSWORD: ${POWERSYNC_STORAGE_PASSWORD:?set POWERSYNC_STORAGE_PASSWORD in .env}
+    volumes:
+      - powersync-storage-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U powersync -d powersync"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  powersync:
+    image: journeyapps/powersync-service@sha256:bf46f66e5dcc8f6a084de02ab51155dfa655bc610aa95009fff1c36f949c0acf
+    command: ["start", "-r", "unified"]
+    depends_on:
+      sqlserver-setup:
+        condition: service_completed_successfully
+      powersync-storage:
+        condition: service_healthy
+    environment:
+      POWERSYNC_CONFIG_PATH: /config/service.yaml
+      PS_DATA_SOURCE_URI: mssql://plant_app:${MSSQL_APP_PASSWORD}@sqlserver:1433/plant_route
+      PS_STORAGE_URI: postgresql://powersync:${POWERSYNC_STORAGE_PASSWORD}@powersync-storage:5432/powersync
+      PS_CLIENT_AUTH_KEY: ${POWERSYNC_CLIENT_AUTH_KEY:?set POWERSYNC_CLIENT_AUTH_KEY in .env}
+      NODE_OPTIONS: --max-old-space-size=1000
+    volumes:
+      - ./powersync:/config:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:8080/probes/liveness').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 40
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    depends_on:
+      sqlserver-setup:
+        condition: service_completed_successfully
+    environment:
+      PORT: "3000"
+      SQL_SERVER: sqlserver
+      SQL_DATABASE: plant_route
+      SQL_USER: plant_app
+      SQL_PASSWORD: ${MSSQL_APP_PASSWORD:?set MSSQL_APP_PASSWORD in .env}
+      POWERSYNC_URL: /powersync
+      POWERSYNC_CLIENT_AUTH_KEY: ${POWERSYNC_CLIENT_AUTH_KEY:?set POWERSYNC_CLIENT_AUTH_KEY in .env}
+      POWERSYNC_ADMIN_TOKEN: ${POWERSYNC_ADMIN_TOKEN:?set POWERSYNC_ADMIN_TOKEN in .env}
+      POC_FAULTS_ENABLED: "true"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  admin:
+    build:
+      context: .
+      dockerfile: apps/admin/Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+
+  field:
+    build:
+      context: .
+      dockerfile: apps/field/Dockerfile
+    depends_on:
+      powersync:
+        condition: service_healthy
+      api:
+        condition: service_healthy
+
+  gateway:
+    image: nginx:1.29-alpine
+    depends_on:
+      admin:
+        condition: service_healthy
+      field:
+        condition: service_healthy
+    ports:
+      - "${APP_PORT:-8787}:8080"
+    volumes:
+      - ./infra/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8080/api/health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  e2e:
+    profiles: [test]
+    network_mode: service:gateway
+    build:
+      context: .
+      dockerfile: tests/e2e/Dockerfile
+    depends_on:
+      gateway:
+        condition: service_healthy
+    environment:
+      E2E_BASE_URL: http://localhost:8080
+    volumes:
+      - ./test-results:/workspace/test-results
+      - ./playwright-report:/workspace/playwright-report
+      - ./tests/qa/evidence:/workspace/evidence
+
+  tailscale:
+    profiles: [tailscale]
+    image: tailscale/tailscale:v1.86.5
+    network_mode: service:gateway
+    depends_on:
+      gateway:
+        condition: service_healthy
+    environment:
+      TS_AUTHKEY: ${TAILSCALE_AUTHKEY:-}
+      TS_STATE_DIR: /var/lib/tailscale
+      TS_SERVE_CONFIG: /config/serve.json
+      TS_HOSTNAME: plant-route-poc
+      TS_USERSPACE: "true"
+    volumes:
+      - tailscale-state:/var/lib/tailscale
+      - ./infra/tailscale/serve.json:/config/serve.json:ro
+    cap_add:
+      - net_admin
+      - sys_module
+
+volumes:
+  sqlserver-data:
+  powersync-storage-data:
+  tailscale-state:

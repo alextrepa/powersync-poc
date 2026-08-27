@@ -1,0 +1,25 @@
+{
+  "name": "@plant-route/api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "dev": "tsx watch src/server.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run src"
+  },
+  "dependencies": {
+    "@fastify/cors": "11.3.0",
+    "@plant-route/domain": "*",
+    "fastify": "5.12.1",
+    "jose": "6.2.10",
+    "mssql": "12.7.0",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/mssql": "9.1.8",
+    "tsx": "4.21.0"
+  }
+}

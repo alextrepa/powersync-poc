@@ -1,0 +1,89 @@
+name: POC qualification
+
+on:
+  pull_request:
+  push:
+    branches: [master, main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qualify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      MSSQL_SA_PASSWORD: LocalOnly_Strong_Password_123!
+      MSSQL_APP_PASSWORD: LocalOnly_App_Password_123!
+      POWERSYNC_STORAGE_PASSWORD: LocalOnly_Storage_Password_123!
+      POWERSYNC_CLIENT_AUTH_KEY: ZGV2LW9ubHktcG93ZXJzeW5jLWNsaWVudC1hdXRoLWtleS0zMmJ5dGVz
+      POWERSYNC_ADMIN_TOKEN: local-powersync-admin-token
+      APP_PORT: 8787
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.22.0
+          cache: npm
+
+      - run: npm ci
+      - run: npm run check
+      - run: docker compose config --quiet
+      - run: docker compose up -d --build --wait
+      - run: docker compose --profile test run --build --rm e2e
+      - name: Prove service restart recovery
+        run: |
+          docker compose restart api powersync
+          docker compose up -d --wait
+          docker compose --profile test run --rm e2e npx playwright test tests/e2e/stack-smoke.spec.ts --grep "containerized stack serves"
+      - name: Prove queued work survives API and PowerSync interruption
+        run: node scripts/run-interruption-e2e.mjs
+      - name: Measure 20 offline convergence runs
+        run: >-
+          docker compose --profile test run --rm e2e sh -lc
+          'npx playwright test tests/e2e/stack-smoke.spec.ts --grep "survives offline reload" --repeat-each=20 --workers=1 --reporter=json > /tmp/convergence.json && node scripts/summarize-convergence.mjs /tmp/convergence.json /workspace/evidence/convergence-summary.json'
+
+      - name: Capture sanitized failure evidence
+        if: failure()
+        shell: bash
+        run: |
+          mkdir -p ci-artifacts
+          docker compose ps --all > ci-artifacts/compose-ps.txt
+          docker compose logs --no-color api powersync gateway \
+            | sed -e "s/${MSSQL_APP_PASSWORD}/[REDACTED]/g" \
+                  -e "s/${POWERSYNC_STORAGE_PASSWORD}/[REDACTED]/g" \
+                  -e "s/${POWERSYNC_CLIENT_AUTH_KEY}/[REDACTED]/g" \
+            > ci-artifacts/services.log
+
+      - name: Scan retained evidence for configured secrets
+        if: always()
+        shell: bash
+        run: |
+          targets=()
+          for path in ci-artifacts test-results playwright-report tests/qa/evidence; do
+            [[ -e "$path" ]] && targets+=("$path")
+          done
+          for value in "$MSSQL_SA_PASSWORD" "$MSSQL_APP_PASSWORD" "$POWERSYNC_STORAGE_PASSWORD" "$POWERSYNC_CLIENT_AUTH_KEY" "$POWERSYNC_ADMIN_TOKEN"; do
+            if ((${#targets[@]})) && grep -RIlF -- "$value" "${targets[@]}" >/dev/null; then
+              echo "Configured secret detected in retained evidence."
+              exit 1
+            fi
+          done
+
+      - name: Upload browser and service evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: poc-qualification-evidence
+          path: |
+            ci-artifacts
+            test-results
+            playwright-report
+            tests/qa/evidence/convergence-summary.json
+            tests/qa/evidence/interruption-summary.json
+          retention-days: 14
+
+      - if: always()
+        run: docker compose --profile test down --volumes

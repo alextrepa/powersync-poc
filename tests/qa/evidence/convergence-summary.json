@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-27T08:03:04.493Z",
+  "source": "Playwright JSON reporter",
+  "scenario": "team route survives offline reload and uploads a pickup after reconnection",
+  "expected": 20,
+  "unexpected": 0,
+  "skipped": 0,
+  "totalDurationMs": 308705.24700000003,
+  "resultCount": 20,
+  "durationsMs": {
+    "min": 13862,
+    "median": 14394,
+    "p95": 14888,
+    "max": 16361,
+    "average": 14623
+  }
+}

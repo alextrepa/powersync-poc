@@ -1,0 +1,13 @@
+.git
+.github
+node_modules
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+playwright-report
+test-results
+tests/qa/evidence
+.env
+.env.*
+!.env.example
+*.log
