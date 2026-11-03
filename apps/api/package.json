@@ -16,7 +16,7 @@
     "fastify": "5.12.1",
     "jose": "6.2.10",
     "mssql": "12.7.0",
-    "zod": "4.4.3"
+    "zod": "4.6.6"
   },
   "devDependencies": {
     "@types/mssql": "9.1.8",
